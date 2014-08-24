@@ -28,7 +28,7 @@ This class is for linking the WebUI with PNP,
 for mainly get graphs and links.
 """
 
-import socket
+import socket, re
 
 from shinken.log import logger
 from shinken.basemodule import BaseModule
@@ -38,15 +38,16 @@ properties = {
     'type': 'pnp_webui'
     }
 
-# called by the plugin manager
 def get_instance(plugin):
+    """called by the plugin manager"""
     logger.info("Get an PNP UI module for plugin %s" % plugin.get_name())
 
-    instance = PNP_Webui(plugin)
+    instance = PNPWebui(plugin)
     return instance
 
 
-class PNP_Webui(BaseModule):
+class PNPWebui(BaseModule):
+    """Main module class"""
     def __init__(self, modconf):
         BaseModule.__init__(self, modconf)
         self.uri = getattr(modconf, 'uri', None)
@@ -69,51 +70,127 @@ class PNP_Webui(BaseModule):
     def init(self):
         pass
 
-    # To load the webui application
     def load(self, app):
+        """To load the webui application"""
         self.app = app
 
-    # For an element, give the number of elements in
-    # the perf_data
-    def get_number_of_metrics(self, elt):
+    @staticmethod
+    def get_number_of_metrics(elt):
+        """For an element, give the number of elements in
+        the perf_data"""
         perf_data = elt.perf_data.strip()
         elts = perf_data.split(' ')
         elts = [e for e in elts if e != '']
         return len(elts)
 
-    # Give the link for the PNP UI, with a Name
+    @staticmethod
+    def replace_graph_size(url, width, height):
+        """Private function to replace the graph size by the specified
+        value."""
+
+        # Replace width
+        if re.search('graph_width=', url) is None:
+            url = "{url}&graph_width={width}".format(
+                url=url,
+                width=width)
+        else:
+            url = re.sub(
+                r'graph_width=[^\&]+',
+                'graph_width={width}'.format(width=width),
+                url)
+
+        # Replace Height
+        if re.search('graph_height=', url) is None:
+            url = "{url}&graph_height={height}".format(
+                url=url,
+                height=height)
+        else:
+            url = re.sub(
+                r'graph_height=[^\&]+',
+                'graph_height={height}'.format(height=height),
+                url)
+
+        return url
+
     def get_external_ui_link(self):
+        """Give the link for the PNP UI, with a Name"""
         return {'label': 'PNP4', 'uri': self.uri}
 
-    # Ask for an host or a service the graph UI that the UI should
-    # give to get the graph image link and PNP page link too.
-    # for now, the source variable does nothing. Values passed to this variable can be : 
-    # 'detail' for the element detail page
-    # 'dashboard' for the dashboard widget
-    # you can customize the url depending on this value. (or not)
-    def get_graph_uris(self, elt, graphstart, graphend, source = 'detail'):
+    def get_graph_uris(self, elt, graphstart, graphend,
+                       source='detail', params={}):
+        """Ask for an host or a service the graph UI that the UI should
+        give to get the graph image link and PNP page link too.
+        for now, the source variable does nothing. Values passed to this
+        variable can be :
+            'detail' for the element detail page
+            'dashboard' for the dashboard widget
+        you can customize the url depending on this value. (or not)
+
+        Parameters
+        * params : array of extra parameter :
+            * width: graph width (default 586)
+            * height: graph height (default 308)
+        """
         if not elt:
             return []
 
-        t = elt.__class__.my_type
-        r = []
+        width = params.get('width', 586)
+        height = params.get('height', 308)
 
-        if t == 'host':
+        my_type = elt.__class__.my_type
+        ret = []
+
+        # Generate IMG SRC prefix
+        img_src_pre = '{uri}{path}&start={start_date}&end={end_date}'.format(
+            uri=self.uri,
+            path='index.php/image?view=0',
+            start_date=graphstart,
+            end_date=graphend)
+
+        # Generate link prefix
+        link_pre = '{uri}index.php/graph?'.format(
+            uri=self.uri)
+
+        if my_type == 'host':
             nb_metrics = self.get_number_of_metrics(elt)
             for i in range(nb_metrics):
-                v = {}
-                v['link'] = self.uri + 'index.php/graph?host=%s&srv=_HOST_' % elt.get_name()
-                v['img_src'] = self.uri + 'index.php/image?host=%s&srv=_HOST_&view=0&source=%d&start=%d&end=%d' % (elt.get_name(), i, graphstart, graphend)
-                r.append(v)
-            return r
-        if t == 'service':
+                value = {}
+                value['link'] = '{uri}host={host}&srv=_HOST_'.format(
+                    uri=link_pre,
+                    host=elt.get_name())
+                value['img_src'] = '{uri}&source={source}'.format(
+                    uri=img_src_pre,
+                    source=i)
+                value['img_src'] = '{uri}&host={host}&srv=_HOST_'.format(
+                    uri=value['img_src'],
+                    host=elt.get_name())
+                ret.append(value)
+                value['img_src'] = self.replace_graph_size(
+                    value['img_src'],
+                    width,
+                    height)
+            return ret
+        if my_type == 'service':
             nb_metrics = self.get_number_of_metrics(elt)
             for i in range(nb_metrics):
-                v = {}
-                v['link'] = self.uri + 'index.php/graph?host=%s&srv=%s' % (elt.host.host_name, elt.service_description)
-                v['img_src'] = self.uri + 'index.php/image?host=%s&srv=%s&view=0&source=%d&start=%d&end=%d' % (elt.host.host_name, elt.service_description, i, graphstart, graphend)
-                r.append(v)
-            return r
+                value = {}
+                value['link'] = '{uri}host={host}&srv={srv}'.format(
+                    uri=link_pre,
+                    host=elt.host.host_name,
+                    srv=elt.service_description)
+                value['img_src'] = "{uri}&source={source}".format(
+                    uri=img_src_pre,
+                    source=i)
+                value['img_src'] = "{uri}&host={host}&srv={srv}".format(
+                    uri=value['img_src'],
+                    host=elt.host.host_name,
+                    srv=elt.service_description)
+                value['img_src'] = self.replace_graph_size(
+                    value['img_src'],
+                    width,
+                    height)
+                ret.append(value)
+            return ret
 
         # Oups, bad type?
         return []

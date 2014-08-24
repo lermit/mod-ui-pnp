@@ -81,6 +81,63 @@ def init_service(params={}):
 
     return srv
 
+class ReplaceGraphSizeTest(unittest.TestCase):
+    """Test the replacement of graph size"""
+
+    def test_replace_graph_size(self):
+        """Test the replace with already specified graph size in url"""
+
+        module = init_module()
+        url = 'http://pnp.example.com/?graph_width=42&graph_height=42&after=2'
+        new_height = '123'
+        new_width = '123'
+
+        new_url = module.replace_graph_size(url, new_width, new_height)
+        self.assertIn('graph_height=123', new_url)
+        self.assertIn('graph_width=123', new_url)
+        self.assertIn('after=2', new_url)
+
+    def test_add_graph_size(self):
+        """Test the adding of new graph size"""
+
+        module = init_module()
+        url = 'http://pnp.example.com/?before=1&after=2'
+        new_height = '123'
+        new_width = '123'
+
+        new_url = module.replace_graph_size(url, new_width, new_height)
+        self.assertIn('graph_height=123', new_url)
+        self.assertIn('graph_width=123', new_url)
+        self.assertIn('before=1', new_url)
+        self.assertIn('after=2', new_url)
+
+    def test_add_graph_size_height(self):
+        """Test adding height graph size"""
+
+        module = init_module()
+        url = 'http://pnp.example.com/?before=1&graph_width=42&after=2'
+        new_height = '123'
+        new_width = '123'
+
+        new_url = module.replace_graph_size(url, new_width, new_height)
+        self.assertIn('graph_width=123', new_url)
+        self.assertIn('graph_height=123', new_url)
+        self.assertIn('before=1', new_url)
+        self.assertIn('after=2', new_url)
+
+    def test_add_graph_size_width(self):
+        """Test adding width graph size"""
+
+        module = init_module()
+        url = 'http://pnp.example.com/?before=1&graph_height=42&after=2'
+        new_height = '123'
+        new_width = '123'
+
+        new_url = module.replace_graph_size(url, new_width, new_height)
+        self.assertIn('graph_height=123', new_url)
+        self.assertIn('graph_width=123', new_url)
+        self.assertIn('before=1', new_url)
+        self.assertIn('after=2', new_url)
 
 class GetGraphUrisTest(unittest.TestCase):
     """Test the get_graph_uris function"""
@@ -110,6 +167,26 @@ class GetGraphUrisTest(unittest.TestCase):
         self.assertIs(type(uris), list)
         self.assertEquals(len(uris), 1)
 
+    def test_serice_with_graph_size(self):
+        """Get a graph with a speicified size"""
+        module = init_module()
+        service = init_service({
+            'perf_data': 'dummy_service=500M;300;400;110;1000;',
+        })
+        graph_size = {
+            'width': '42',
+            'height': '4242',
+        }
+
+        uris = module.get_graph_uris(
+            service,
+            GRAPHSTART,
+            GRAPHEND,
+            params=graph_size)
+        img_src = uris[0]['img_src']
+
+        self.assertIn('graph_width=42', img_src)
+        self.assertIn('graph_height=4242', img_src)
 
 if __name__ == '__main__':
     unittest.main()
